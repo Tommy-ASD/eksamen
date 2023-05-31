@@ -2,3 +2,5 @@
 Cargo.lock
 wishlists
 padding_manager.json
+
+.env
