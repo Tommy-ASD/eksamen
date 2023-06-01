@@ -16,11 +16,25 @@ fn set_file(file: &serde_json::Value) {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+enum Bought {
+    Hidden,
+    Visible(bool),
+}
+
+impl Default for Bought {
+    fn default() -> Self {
+        Self::Hidden
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct WishListElement {
     pub name: String,
     pub price: f64,
     pub store: String,
     pub link: Option<Url>,
+    #[serde(default)]
+    bought: Bought,
 }
 
 impl WishListElement {
@@ -30,6 +44,7 @@ impl WishListElement {
             price,
             store,
             link,
+            bought: Bought::Hidden,
         }
     }
     pub fn new_from_cli() -> Self {

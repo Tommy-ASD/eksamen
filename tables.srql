@@ -3,8 +3,8 @@ DEFINE FIELD name ON user TYPE string;
 DEFINE FIELD pass ON user TYPE string;
 
 DEFINE SCOPE account SESSION 24h
-	SIGNUP ( CREATE user SET name = $name )
-	SIGNIN ( SELECT * FROM user WHERE name = $name )
+	SIGNUP ( CREATE user SET name = $name, pass = crypto::argon2::generate($pass) )
+	SIGNIN ( SELECT * FROM user WHERE name = $name AND crypto::argon2::compare(pass, $pass) )
 ;
 
 DEFINE TABLE item SCHEMAFULL;
@@ -28,33 +28,3 @@ DEFINE FIELD bought ON wishes_for TYPE bool
         FOR select, update, create, delete
             WHERE $auth != out
 ;
-
-// Create a few users
-LET $per = (CREATE user SET name = "Per");
-LET $kari = (CREATE user SET name = "Kari");
-LET $ola = (CREATE user SET name = "Ola");
-LET $knut = (CREATE user SET name = "Knut");
-
-// Create a few items
-LET $lego = (CREATE item SET name = "Lego", price = 100, link = "http://www.lego.com", store = "Lego");
-LET $playmobil = (CREATE item SET name = "Playmobil", price = 200, link = "http://www.playmobil.com", store = "Playmobil");
-LET $barbie = (CREATE item SET name = "Barbie", price = 300, link = "http://www.barbie.com", store = "Barbie");
-LET $brio = (CREATE item SET name = "Brio", price = 400, link = "http://www.brio.com", store = "Brio");
-
-// Create a few wishes
-LET $knutplaymobil = (RELATE $playmobil->wishes_for->$knut);
-LET $perplaymobil = (RELATE $playmobil->wishes_for->$per);
-LET $karibarbie = (RELATE $barbie->wishes_for->$kari);
-LET $karibrio = (RELATE $brio->wishes_for->$kari);
-LET $knutbarbie = (RELATE $barbie->wishes_for->$knut);
-LET $olalego = (RELATE $lego->wishes_for->$ola);
-LET $perlego = (RELATE $lego->wishes_for->$per);
-LET $olabrio = (RELATE $brio->wishes_for->$ola);
-
-SELECT * FROM wishes_for;
-
-// Buy a few wishes
-UPDATE $perlego SET bought = true;
-UPDATE $karibarbie SET bought = true;
-UPDATE $olalego SET bought = true;
-UPDATE $knutplaymobil SET bought = true;
