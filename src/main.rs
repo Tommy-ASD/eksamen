@@ -1,3 +1,4 @@
+use per::EncryptedWishListElement;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs};
 use surrealdb::{
@@ -13,15 +14,17 @@ struct Record {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct SrdbWishListElement {
+struct SrdbUserElement {
     // id: sql::Thing,
-    #[serde(rename = "in")]
-    in_: sql::Thing,
-    out: sql::Thing,
+    // #[serde(rename = "in")]
+    // in_: sql::Thing,
+    // out: sql::Thing,
     name: String,
-    price: f64,
-    store: String,
-    time: i32,
+    wishes: Vec<WishListElement>, // pass: String,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct SrdbWishList {
+    wishes: Vec<WishListElement>,
 }
 
 use crate::per::WishListElement;
@@ -42,6 +45,11 @@ struct AuthParams<'a> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let test_wish = WishListElement::new("test".to_string(), 100.0, "test".to_string(), None);
+    let encr = EncryptedWishListElement::from_unencrypted(test_wish, b"0123456789abcdef");
+    println!("{:?}", encr);
+    let decr = encr.decrypt(b"0123456789abcdef");
+    println!("{:?}", decr);
     // start db as a child process
     // let db = std::process::Command::new("./db.exe")
     //     .arg("start")
@@ -58,8 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("Failed to connect to database at localhost:8000");
     DB.use_ns(NS_STR).use_db(DB_STR).await?;
-    test().await?;
-    return Ok(());
+    // test().await?;
+    // return Ok(());
     std::env::set_var("RUST_BACKTRACE", "1");
     loop {
         let input = crate::input!("Sign in or sign up? (in/up): ");
@@ -201,77 +209,31 @@ async fn read_wishlist() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
-    let name = crate::input!("Write the username of the persin who's wishlist you want to see: ");
-    let wishes: Vec<SrdbWishListElement> = DB.select("wishes_for").await?;
-    dbg!(wishes);
-    // let query = "SELECT ->wishes_for->item AS wishes FROM user WHERE name = $name FETCH wishes";
-    // let mut result = DB.query(query).bind(("name", &name)).await?;
-    // dbg!(&result);
-    // let items = result
-    //     .take::<Vec<Object>>(0)?
-    //     .pop()
-    //     .unwrap()
-    //     // .get("wishes")
-    //     // .unwrap()
-    //     .clone();
-    // dbg!(&items);
-
+    let name = crate::input!("Write the username of the person who's wishlist you want to see: ");
+    let mut response = DB
+        .query(&format!(
+            "SELECT ->wishes_for->item AS wishes FROM user WHERE name = \"{name}\" FETCH wishes;"
+        ))
+        .bind(("name", &name))
+        .await?;
+    let wishes: Vec<SrdbWishList> = response.take(0)?;
+    // get the first element
+    let mut wishes: Vec<WishListElement> = wishes
+        .first()
+        .ok_or("No user with that name")?
+        .wishes
+        .clone();
+    let max_price = crate::input!("What is your max price? (0 for no limit): ");
+    let max_price: f64 = max_price.parse()?;
+    if max_price != 0.0 {
+        wishes = wishes
+            .into_iter()
+            .filter(|w| w.price <= max_price)
+            .collect::<Vec<_>>();
+    }
+    wishes.sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap());
+    wishes.iter().for_each(|w| println!("{}", w));
     Ok(())
-}
-
-async fn test() -> Result<(), Box<dyn std::error::Error>> {
-    DB.signin(Scope {
-        namespace: NS_STR,
-        database: DB_STR,
-        scope: SC_STR,
-        params: AuthParams {
-            name: "Petter",
-            pass: "Pass",
-        },
-    })
-    .await?;
-    let wishes: Vec<SrdbWishListElement> = DB.select("item").await?;
-    dbg!(wishes);
-    // let query = "SELECT ->wishes_for->item AS wishes FROM user WHERE name = \"Per\" FETCH wishes";
-    // let mut result = DB.query(query).await?;
-    // dbg!(&result);
-    // let items = result
-    //     .take::<Vec<Object>>(0)?
-    //     // .get("wishes")
-    //     // .unwrap()
-    //     .clone();
-    // dbg!(&items);
-
-    Ok(())
-}
-
-fn write_padding(key: &str, padding: u8) {
-    // read padding_manager.json
-    let padding_manager = match std::fs::read_to_string("padding_manager.json") {
-        Ok(padding_manager) => padding_manager,
-        Err(_) => {
-            let padding_manager = serde_json::Value::Object(serde_json::Map::new());
-            serde_json::to_string_pretty(&padding_manager).unwrap()
-        }
-    };
-    let mut padding_manager: serde_json::Value = serde_json::from_str(&padding_manager).unwrap();
-    // add padding to padding_manager
-    padding_manager[key] = serde_json::Value::from(padding);
-    // write padding_manager.json
-    let padding_manager = serde_json::to_string_pretty(&padding_manager).unwrap();
-    std::fs::write("padding_manager.json", padding_manager).unwrap();
-}
-
-fn read_padding(key: &str) -> u8 {
-    // read padding_manager.json
-    let padding_manager = std::fs::read_to_string("padding_manager.json").unwrap();
-    let padding_manager: serde_json::Value = serde_json::from_str(&padding_manager).unwrap();
-    // get padding from padding_manager
-    let padding = match padding_manager.get(key) {
-        Some(serde_json::Value::Number(padding)) => padding.as_u64().unwrap() as u8,
-        _ => 0,
-    };
-    padding as u8
 }
 
 fn password<'a>() -> Vec<u8> {
