@@ -81,49 +81,42 @@ impl WishListElement {
         };
         Self::new(name, price, store, link)
     }
-    fn from_encrypted(encrypted: &EncryptedWishListElement, decryption_key: &[u8]) -> Self {
+    fn from_encrypted(
+        encrypted: &EncryptedWishListElement,
+        decryption_key: &[u8],
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let name = String::from_utf8(crate::utils::decrypt(
             decryption_key,
             &encrypted.name,
             encrypted.paddings.name,
-        ))
-        .unwrap();
+        ))?;
         let price = String::from_utf8(crate::utils::decrypt(
             decryption_key,
             &encrypted.price,
             encrypted.paddings.price,
-        ))
-        .unwrap()
-        .parse::<f64>()
-        .unwrap();
+        ))?
+        .parse::<f64>()?;
         let store = String::from_utf8(crate::utils::decrypt(
             decryption_key,
             &encrypted.store,
             encrypted.paddings.store,
-        ))
-        .unwrap();
+        ))?;
         let link = if let Some(link) = &encrypted.link {
-            Some(
-                Url::parse(
-                    &String::from_utf8(crate::utils::decrypt(
-                        decryption_key,
-                        &link,
-                        encrypted.paddings.link.unwrap(),
-                    ))
-                    .unwrap(),
-                )
-                .unwrap(),
-            )
+            Some(Url::parse(&String::from_utf8(crate::utils::decrypt(
+                decryption_key,
+                &link,
+                encrypted.paddings.link.unwrap(),
+            ))?)?)
         } else {
             None
         };
-        Self {
+        Ok(Self {
             name,
             price,
             store,
             link,
             bought: encrypted.bought.clone(),
-        }
+        })
     }
 }
 
@@ -141,6 +134,7 @@ pub struct EncryptedWishListElement {
     pub price: Vec<u8>,
     pub store: Vec<u8>,
     pub link: Option<Vec<u8>>,
+    #[serde(default)]
     pub bought: Bought,
     pub paddings: Paddings,
 }
@@ -175,7 +169,10 @@ impl EncryptedWishListElement {
             },
         }
     }
-    pub fn decrypt(&self, decryption_key: &[u8]) -> WishListElement {
+    pub fn decrypt(
+        &self,
+        decryption_key: &[u8],
+    ) -> Result<WishListElement, Box<dyn std::error::Error>> {
         WishListElement::from_encrypted(self, decryption_key)
     }
 }
@@ -215,7 +212,7 @@ mod tests {
             Some(Url::parse("https://test.com").unwrap()),
         );
         let encrypted = EncryptedWishListElement::from_unencrypted(wish, key);
-        let decrypted = WishListElement::from_encrypted(&encrypted, key);
+        let decrypted = WishListElement::from_encrypted(&encrypted, key).unwrap();
         assert_eq!(decrypted.name, String::from("Test"));
         assert_eq!(decrypted.price, 123.0);
         assert_eq!(decrypted.store, String::from("Test"));

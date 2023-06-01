@@ -24,7 +24,7 @@ struct SrdbUserElement {
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct SrdbWishList {
-    wishes: Vec<WishListElement>,
+    wishes: Vec<EncryptedWishListElement>,
 }
 
 use crate::per::WishListElement;
@@ -51,17 +51,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decr = encr.decrypt(b"0123456789abcdef");
     println!("{:?}", decr);
     // start db as a child process
-    // let db = std::process::Command::new("./db.exe")
-    //     .arg("start")
-    //     .arg("--log")
-    //     .arg("debug")
-    //     .arg("--user")
-    //     .arg("root")
-    //     .arg("--pass")
-    //     .arg("root")
-    //     .arg("file://./db")
-    //     .spawn()
-    //     .expect("Failed to start database");
+    let db = std::process::Command::new("./db.exe")
+        .arg("start")
+        .arg("--log")
+        .arg("none")
+        .arg("--user")
+        .arg("root")
+        .arg("--pass")
+        .arg("root")
+        .arg("file://./db")
+        .spawn()
+        .expect("Failed to start database");
     DB.connect::<Ws>("localhost:8000")
         .await
         .expect("Failed to connect to database at localhost:8000");
@@ -169,12 +169,16 @@ async fn write_wishlist() -> Result<(), Box<dyn std::error::Error>> {
         .clone();
     dbg!(&auth_id);
     let auth_id = format!("{}:{}", auth_id.tb, auth_id.id);
+    let encryption_key =
+        password("Write a decryption key (you and others will need this to read your wishes): ");
     println!("Add wishes: ");
     loop {
         let element = per::WishListElement::new_from_cli();
         println!("{}", element);
+        let encrypted_element =
+            EncryptedWishListElement::from_unencrypted(element, &encryption_key);
         // add to db
-        let created: Option<Record> = match DB.create("item").content(element).await {
+        let created: Option<Record> = match DB.create("item").content(encrypted_element).await {
             Ok(r) => r,
             Err(e) => None,
         };
@@ -203,8 +207,15 @@ async fn write_wishlist() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn read_wishlist() -> Result<(), Box<dyn std::error::Error>> {
-    let items: Vec<WishListElement> = DB.select("item").await?;
-    dbg!(items);
+    let items: Vec<EncryptedWishListElement> = DB.select("item").await?;
+    let decryption_key = password("Write the decryption key");
+    let decrypted_items: Vec<WishListElement> = items
+        .iter()
+        .map(|i| i.decrypt(&decryption_key))
+        .filter(|i| i.is_ok())
+        .map(|i| i.unwrap())
+        .collect();
+    decrypted_items.iter().for_each(|i| println!("{}", i));
     Ok(())
 }
 
@@ -218,11 +229,18 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let wishes: Vec<SrdbWishList> = response.take(0)?;
     // get the first element
-    let mut wishes: Vec<WishListElement> = wishes
+    let mut encrypted_wishes: Vec<EncryptedWishListElement> = wishes
         .first()
         .ok_or("No user with that name")?
         .wishes
         .clone();
+    let decryption_key = password("Write the decryption key");
+    let mut wishes: Vec<WishListElement> = encrypted_wishes
+        .iter()
+        .map(|wish| wish.decrypt(&decryption_key))
+        .filter(|wish| wish.is_ok())
+        .map(|wish| wish.unwrap())
+        .collect();
     let max_price = crate::input!("What is your max price? (0 for no limit): ");
     let max_price: f64 = max_price.parse()?;
     if max_price != 0.0 {
@@ -236,10 +254,8 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn password<'a>() -> Vec<u8> {
-    let mut key = crate::input!("Password (16 characters): ")
-        .as_bytes()
-        .to_vec();
+fn password<'a>(message: &str) -> Vec<u8> {
+    let mut key = crate::input!("{message}").as_bytes().to_vec();
     if key.len() < 16 {
         utils::pad(&mut key);
     }

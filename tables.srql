@@ -8,16 +8,25 @@ DEFINE SCOPE account SESSION 24h
 ;
 
 DEFINE TABLE item SCHEMAFULL;
-DEFINE FIELD name ON item TYPE string;
-DEFINE FIELD price ON item TYPE int;
-DEFINE FIELD link ON item TYPE string;
-DEFINE FIELD store ON item TYPE string;
+DEFINE FIELD name ON item TYPE array;
+DEFINE FIELD name.* ON item TYPE number;
+DEFINE FIELD price ON item TYPE array;
+DEFINE FIELD price.* ON item TYPE number;
+DEFINE FIELD link ON item TYPE array;
+DEFINE FIELD link.* ON item TYPE number;
+DEFINE FIELD store ON item TYPE array;
+DEFINE FIELD store.* ON item TYPE number;
+DEFINE FIELD paddings ON item TYPE object;
+DEFINE FIELD paddings.name ON item TYPE number;
+DEFINE FIELD paddings.price ON item TYPE number;
+DEFINE FIELD paddings.link ON item TYPE number;
+DEFINE FIELD paddings.store ON item TYPE number;
 
 
 DEFINE TABLE wishes_for SCHEMAFULL
-    PERMISSIONS
-        FOR create, delete
-            WHERE $auth == out
+--    PERMISSIONS
+--        FOR create, delete
+--            WHERE $auth == out
 ;
 DEFINE FIELD in ON wishes_for TYPE record(item);
 DEFINE FIELD out ON wishes_for TYPE record(user);
