@@ -1,10 +1,10 @@
 use per::EncryptedWishListElement;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs};
+use std::collections::HashMap;
 use surrealdb::{
     engine::remote::ws::{Client, Ws},
-    opt::auth::{Database, Namespace, Root, Scope},
-    sql::{self, Object, Query, Thing},
+    opt::auth::Scope,
+    sql::Thing,
     Surreal,
 };
 #[derive(Debug, Deserialize)]
@@ -45,13 +45,8 @@ struct AuthParams<'a> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let test_wish = WishListElement::new("test".to_string(), 100.0, "test".to_string(), None);
-    let encr = EncryptedWishListElement::from_unencrypted(test_wish, b"0123456789abcdef");
-    println!("{:?}", encr);
-    let decr = encr.decrypt(b"0123456789abcdef");
-    println!("{:?}", decr);
     // start db as a child process
-    let db = std::process::Command::new("./db.exe")
+    std::process::Command::new("./db.exe")
         .arg("start")
         .arg("--log")
         .arg("none")
@@ -66,23 +61,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("Failed to connect to database at localhost:8000");
     DB.use_ns(NS_STR).use_db(DB_STR).await?;
-    // test().await?;
-    // return Ok(());
-    std::env::set_var("RUST_BACKTRACE", "1");
     loop {
         let input = crate::input!("Sign in or sign up? (in/up): ");
-        if input == "in" {
-            match signin().await {
+        match input.as_str() {
+            "in" => match signin().await {
                 Ok(_) => break,
                 Err(e) => println!("Error: {}", e),
-            }
-        } else if input == "up" {
-            match signup().await {
+            },
+            "up" => match signup().await {
                 Ok(_) => break,
                 Err(e) => println!("Error: {}", e),
+            },
+            _ => {
+                println!("Invalid input")
             }
-        } else {
-            println!("Invalid input");
         }
     }
     after_login().await?;
@@ -174,20 +166,14 @@ async fn write_wishlist() -> Result<(), Box<dyn std::error::Error>> {
     println!("Add wishes: ");
     loop {
         let element = per::WishListElement::new_from_cli();
-        println!("{}", element);
         let encrypted_element =
             EncryptedWishListElement::from_unencrypted(element, &encryption_key);
         // add to db
-        let created: Option<Record> = match DB.create("item").content(encrypted_element).await {
-            Ok(r) => r,
-            Err(e) => None,
-        };
-        println!("{:?}", created);
+        let created: Option<Record> = DB.create("item").content(encrypted_element).await.ok();
         let item_id = match created {
             Some(r) => format!("{}:{}", r.id.tb, r.id.id),
             None => continue,
         };
-        println!("item_id: {}", item_id);
         let query = format!("RELATE {auth_id}->wishes_for->{item_id};");
         let query = DB.query(query);
         let result = query.await?;
@@ -198,11 +184,6 @@ async fn write_wishlist() -> Result<(), Box<dyn std::error::Error>> {
             break;
         }
     }
-    // let stringified = serde_json::to_string(&wish_list).unwrap();
-    // let bytes = stringified.as_bytes();
-    // let (encrypted_bytes, padding) = utils::encrypt(key, bytes);
-    // fs::write(file_path, encrypted_bytes).unwrap();
-    // padding
     Ok(())
 }
 
@@ -229,7 +210,7 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     let wishes: Vec<SrdbWishList> = response.take(0)?;
     // get the first element
-    let mut encrypted_wishes: Vec<EncryptedWishListElement> = wishes
+    let encrypted_wishes: Vec<EncryptedWishListElement> = wishes
         .first()
         .ok_or("No user with that name")?
         .wishes

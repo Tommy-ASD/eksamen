@@ -1,21 +1,9 @@
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use url::Url;
 
 use crate::utils::encrypt;
-
-fn get_file() -> Value {
-    let file = std::fs::read_to_string("ønskeliste.json").unwrap();
-    let file: serde_json::Value = serde_json::from_str(&file).unwrap();
-    file
-}
-
-fn set_file(file: &serde_json::Value) {
-    let file = serde_json::to_string_pretty(&file).unwrap();
-    std::fs::write("ønskeliste.json", file).unwrap();
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Bought {
@@ -140,7 +128,6 @@ pub struct EncryptedWishListElement {
 }
 
 impl EncryptedWishListElement {
-    // use crate::encrypt;
     pub fn from_unencrypted(wish_list_element: WishListElement, encryption_key: &[u8]) -> Self {
         let (enc_name, name_padding) = encrypt(encryption_key, wish_list_element.name.as_bytes());
         let (enc_price, price_padding) = encrypt(
