@@ -1,9 +1,23 @@
 use std::fs;
+use surrealdb::{
+    engine::remote::ws::{Client, Ws},
+    opt::auth::Root,
+    sql::Thing,
+    Surreal,
+};
 
 pub mod per;
 pub mod utils;
 
-fn main() {
+pub static DB: Surreal<Client> = Surreal::init();
+
+#[tokio::main]
+async fn main() {
+    DB.connect::<Ws>("localhost:8080")
+        .await
+        .expect(
+            "Failed to connect to database at localhost:8080",
+        );
     std::env::set_var("RUST_BACKTRACE", "1");
     loop {
         let write = crate::input!(
