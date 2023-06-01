@@ -34,8 +34,6 @@ DEFINE INDEX wishes_for ON TABLE wishes_for COLUMNS in, out UNIQUE;
 
 DEFINE FIELD bought ON wishes_for TYPE bool 
     PERMISSIONS
-        FOR select, update, create, delete
+        FOR select
             WHERE $auth != out
 ;
-
-

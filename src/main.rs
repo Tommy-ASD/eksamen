@@ -22,9 +22,17 @@ struct SrdbUserElement {
     name: String,
     wishes: Vec<WishListElement>, // pass: String,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct WishListGraphConnection<T> {
+    #[serde(rename = "in")]
+    in_: Thing,
+    out: T,
+    id: Thing,
+}
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct SrdbWishList {
-    wishes: Vec<EncryptedWishListElement>,
+    wishes: Vec<WishListGraphConnection<EncryptedWishListElement>>,
 }
 
 use crate::per::WishListElement;
@@ -46,17 +54,17 @@ struct AuthParams<'a> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // start db as a child process
-    std::process::Command::new("./db.exe")
-        .arg("start")
-        .arg("--log")
-        .arg("none")
-        .arg("--user")
-        .arg("root")
-        .arg("--pass")
-        .arg("root")
-        .arg("file://./db")
-        .spawn()
-        .expect("Failed to start database");
+    // std::process::Command::new("./db.exe")
+    //     .arg("start")
+    //     .arg("--log")
+    //     .arg("none")
+    //     .arg("--user")
+    //     .arg("root")
+    //     .arg("--pass")
+    //     .arg("root")
+    //     .arg("file://./db")
+    //     .spawn()
+    //     .expect("Failed to start database");
     DB.connect::<Ws>("localhost:8000")
         .await
         .expect("Failed to connect to database at localhost:8000");
@@ -160,7 +168,7 @@ async fn write_wishlist() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap()
         .clone();
     dbg!(&auth_id);
-    let auth_id = format!("{}:{}", auth_id.tb, auth_id.id);
+    let auth_id = format!("{}", auth_id);
     let encryption_key =
         password("Write a decryption key (you and others will need this to read your wishes): ");
     println!("Add wishes: ");
@@ -171,7 +179,7 @@ async fn write_wishlist() -> Result<(), Box<dyn std::error::Error>> {
         // add to db
         let created: Option<Record> = DB.create("item").content(encrypted_element).await.ok();
         let item_id = match created {
-            Some(r) => format!("{}:{}", r.id.tb, r.id.id),
+            Some(r) => format!("{}", r.id),
             None => continue,
         };
         let query = format!("RELATE {auth_id}->wishes_for->{item_id};");
@@ -204,34 +212,60 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
     let name = crate::input!("Write the username of the person who's wishlist you want to see: ");
     let mut response = DB
         .query(&format!(
-            "SELECT ->wishes_for->item AS wishes FROM user WHERE name = \"{name}\" FETCH wishes;"
+            "SELECT ->wishes_for AS wishes FROM user WHERE name = \"{name}\" FETCH wishes, wishes.out;"
         ))
         .bind(("name", &name))
         .await?;
+    dbg!(&response);
     let wishes: Vec<SrdbWishList> = response.take(0)?;
+    dbg!();
     // get the first element
-    let encrypted_wishes: Vec<EncryptedWishListElement> = wishes
+    let encrypted_wishes: Vec<WishListGraphConnection<EncryptedWishListElement>> = wishes
         .first()
         .ok_or("No user with that name")?
         .wishes
         .clone();
+    dbg!();
     let decryption_key = password("Write the decryption key");
-    let mut wishes: Vec<WishListElement> = encrypted_wishes
+    let mut wishes: Vec<WishListGraphConnection<WishListElement>> = encrypted_wishes
         .iter()
-        .map(|wish| wish.decrypt(&decryption_key))
-        .filter(|wish| wish.is_ok())
-        .map(|wish| wish.unwrap())
+        .filter(|wish| wish.out.decrypt(&decryption_key).is_ok())
+        .map(|wish| {
+            let decrypted = wish.out.decrypt(&decryption_key).unwrap();
+            WishListGraphConnection {
+                in_: wish.in_.clone(),
+                out: decrypted,
+                id: wish.id.clone(),
+            }
+        })
         .collect();
     let max_price = crate::input!("What is your max price? (0 for no limit): ");
     let max_price: f64 = max_price.parse()?;
     if max_price != 0.0 {
         wishes = wishes
             .into_iter()
-            .filter(|w| w.price <= max_price)
+            .filter(|w| w.out.price <= max_price)
             .collect::<Vec<_>>();
     }
-    wishes.sort_by(|a, b| a.price.partial_cmp(&b.price).unwrap());
-    wishes.iter().for_each(|w| println!("{}", w));
+    wishes.sort_by(|a, b| a.out.price.partial_cmp(&b.out.price).unwrap());
+    wishes
+        .iter()
+        .enumerate()
+        .for_each(|(i, w)| println!("{i}: {w}", i = i + 1, w = w.out));
+    let input = crate::input!("Would you like to mark any of these as bought? (y/n)");
+    if input == "y" {
+        // update WishListGraphConnection.id
+        let input = crate::input!("Which one? (number): ");
+        let input: usize = input.parse()?;
+        let wish = wishes.get(input - 1).ok_or("Invalid input")?;
+        let query = format!(
+            "UPDATE {wish_id} SET bought = true WHERE id = {wish_id};",
+            wish_id = wish.id
+        );
+        let query = DB.query(query);
+        let result = query.await?;
+        dbg!(result);
+    }
     Ok(())
 }
 

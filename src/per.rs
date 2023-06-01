@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
+use surrealdb::sql::Thing;
 use url::Url;
 
 use crate::utils::encrypt;
@@ -19,6 +20,7 @@ impl Default for Bought {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WishListElement {
+    pub id: Option<Thing>,
     pub name: String,
     pub price: f64,
     pub store: String,
@@ -30,6 +32,7 @@ pub struct WishListElement {
 impl WishListElement {
     pub fn new(name: String, price: f64, store: String, link: Option<Url>) -> Self {
         Self {
+            id: None,
             name,
             price,
             store,
@@ -99,6 +102,7 @@ impl WishListElement {
             None
         };
         Ok(Self {
+            id: encrypted.id.clone(),
             name,
             price,
             store,
@@ -118,6 +122,7 @@ pub struct Paddings {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EncryptedWishListElement {
+    pub id: Option<Thing>,
     pub name: Vec<u8>,
     pub price: Vec<u8>,
     pub store: Vec<u8>,
@@ -143,6 +148,7 @@ impl EncryptedWishListElement {
             (None, None)
         };
         Self {
+            id: None,
             name: enc_name,
             price: enc_price,
             store: enc_store,
