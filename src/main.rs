@@ -22,8 +22,8 @@ struct SrdbUserElement {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct WishListGraphConnection<T> {
     #[serde(rename = "in")]
-    in_: Thing,
-    out: T,
+    in_: T,
+    out: Thing,
     id: Thing,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -168,7 +168,7 @@ async fn write_wishlist() -> Result<(), Box<dyn std::error::Error>> {
             Some(r) => format!("{}", r.id),
             None => continue,
         };
-        let query = format!("RELATE {auth_id}->wishes_for->{item_id};");
+        let query = format!("RELATE {item_id}->wishes_for->{auth_id};");
         let query = DB.query(query);
         query.await?;
 
@@ -184,7 +184,7 @@ async fn read_wishlist() -> Result<(), Box<dyn std::error::Error>> {
     let auth_id = get_auth_id().await?;
     let mut response = DB
         .query(&format!(
-            "SELECT ->wishes_for AS wishes FROM {auth_id} FETCH wishes, wishes.out;"
+            "SELECT <-wishes_for AS wishes FROM {auth_id} FETCH wishes, wishes.in;"
         ))
         .await?;
     let wishes: Vec<SrdbWishList> = response.take(0)?;
@@ -197,17 +197,17 @@ async fn read_wishlist() -> Result<(), Box<dyn std::error::Error>> {
     let decryption_key = password("Write the decryption key");
     let wishes: Vec<WishListGraphConnection<WishListElement>> = encrypted_wishes
         .iter()
-        .filter(|wish| wish.out.decrypt(&decryption_key).is_ok())
+        .filter(|wish| wish.in_.decrypt(&decryption_key).is_ok())
         .map(|wish| {
-            let decrypted = wish.out.decrypt(&decryption_key).unwrap();
+            let decrypted = wish.in_.decrypt(&decryption_key).unwrap();
             WishListGraphConnection {
-                in_: wish.in_.clone(),
-                out: decrypted,
+                out: wish.out.clone(),
+                in_: decrypted,
                 id: wish.id.clone(),
             }
         })
         .collect();
-    let decrypted_items: Vec<WishListElement> = wishes.iter().map(|w| w.out.clone()).collect();
+    let decrypted_items: Vec<WishListElement> = wishes.iter().map(|w| w.in_.clone()).collect();
     decrypted_items
         .iter()
         .enumerate()
@@ -218,8 +218,21 @@ async fn read_wishlist() -> Result<(), Box<dyn std::error::Error>> {
         let index = index.parse::<usize>()?;
         let wish = wishes.get(index - 1).ok_or("Invalid input")?;
         // delete connection using WishListGraphConnection.id
-        let query = format!("DELETE {wish_id};", wish_id = wish.id);
-        let query = DB.query(query);
+        let deletion_query = format!("DELETE {wish_id};", wish_id = wish.id);
+        let notification_query = format!(
+            "UPDATE notification CONTENT {{
+                \"name\": \"{wish_name}\",
+                \"price\": {wish_price},
+                \"link\": {wish_link:?},
+                \"store\": \"{wish_store}\",
+            }} WHERE item_id = {wish_id} AND user_id = {auth_id};",
+            wish_name = wish.in_.name,
+            wish_price = wish.in_.price,
+            wish_link = wish.in_.link,
+            wish_store = wish.in_.store,
+            wish_id = wish.id
+        );
+        let query = DB.query(deletion_query).query(notification_query);
         query.await?;
     }
     Ok(())
@@ -230,7 +243,7 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
     let name = crate::input!("Write the username of the person who's wishlist you want to see: ");
     let mut response = DB
         .query(&format!(
-            "SELECT ->wishes_for AS wishes FROM user WHERE name = \"{name}\" FETCH wishes, wishes.out;"
+            "SELECT <-wishes_for AS wishes FROM user WHERE name = \"{name}\" FETCH wishes, wishes.in;"
         ))
         .bind(("name", &name))
         .await?;
@@ -244,12 +257,12 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
     let decryption_key = password("Write the decryption key");
     let mut wishes: Vec<WishListGraphConnection<WishListElement>> = encrypted_wishes
         .iter()
-        .filter(|wish| wish.out.decrypt(&decryption_key).is_ok())
+        .filter(|wish| wish.in_.decrypt(&decryption_key).is_ok())
         .map(|wish| {
-            let decrypted = wish.out.decrypt(&decryption_key).unwrap();
+            let decrypted = wish.in_.decrypt(&decryption_key).unwrap();
             WishListGraphConnection {
-                in_: wish.in_.clone(),
-                out: decrypted,
+                out: wish.out.clone(),
+                in_: decrypted,
                 id: wish.id.clone(),
             }
         })
@@ -259,14 +272,14 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
     if max_price != 0.0 {
         wishes = wishes
             .into_iter()
-            .filter(|w| w.out.price <= max_price)
+            .filter(|w| w.in_.price <= max_price)
             .collect::<Vec<_>>();
     }
-    wishes.sort_by(|a, b| a.out.price.partial_cmp(&b.out.price).unwrap());
+    wishes.sort_by(|a, b| a.in_.price.partial_cmp(&b.in_.price).unwrap());
     wishes
         .iter()
         .enumerate()
-        .for_each(|(i, w)| println!("{i}: {w}", i = i + 1, w = w.out));
+        .for_each(|(i, w)| println!("{i}: {w}", i = i + 1, w = w.in_));
     let input = crate::input!("Would you like to mark any of these as bought? (y/n)");
     if input == "y" {
         let input = crate::input!("Which one? (number): ");

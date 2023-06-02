@@ -2,23 +2,6 @@ DEFINE TABLE user SCHEMAFULL;
 DEFINE FIELD name ON user TYPE string;
 DEFINE FIELD pass ON user TYPE string;
 
-// field used to notify users if any of the items they've bought are deleted
-DEFINE FIELD notification ON user TYPE array VALUE $value OR [] // if no value is specified, it is set to an empty array
-    PERMISSIONS
-        FOR select
-            WHERE notif_recipients CONTAINS $auth // only be able to select if you are in the notif_recipients array
-; 
-DEFINE FIELD notification.* ON user TYPE object;
-DEFINE FIELD notification.*.type ON user TYPE string;
-DEFINE FIELD notification.*.item ON user TYPE object;
-DEFINE FIELD notification.*.item.name ON user TYPE string;
-DEFINE FIELD notification.*.item.price ON user TYPE number;
-DEFINE FIELD notification.*.item.link ON user TYPE string;
-DEFINE FIELD notification.*.item.store ON user TYPE string;
-DEFINE FIELD notification.*.item.gift_recipient ON user TYPE record(user);
-DEFINE FIELD notification.*.item.notif_recipients ON user TYPE array;
-DEFINE FIELD notification.*.item.notif_recipients.* ON user TYPE record(user);
-
 DEFINE SCOPE account SESSION 24h
 	SIGNUP ( CREATE user SET name = $name, pass = crypto::argon2::generate($pass) )
 	SIGNIN ( SELECT * FROM user WHERE name = $name AND crypto::argon2::compare(pass, $pass) )
@@ -41,12 +24,12 @@ DEFINE FIELD paddings.store ON item TYPE number;
 
 
 DEFINE TABLE wishes_for SCHEMAFULL
-   PERMISSIONS
-       FOR create, delete
-           WHERE $auth == out
+--    PERMISSIONS
+--        FOR create, delete
+--            WHERE $auth == out
 ;
-DEFINE FIELD in ON wishes_for TYPE record(user);
-DEFINE FIELD out ON wishes_for TYPE record(item);
+DEFINE FIELD in ON wishes_for TYPE record(item);
+DEFINE FIELD out ON wishes_for TYPE record(user);
 DEFINE INDEX wishes_for ON TABLE wishes_for COLUMNS in, out UNIQUE;
 
 DEFINE FIELD bought ON wishes_for TYPE array 
@@ -59,11 +42,24 @@ DEFINE FIELD bought.* ON wishes_for TYPE record(user); // each user who bought t
 
 DEFINE EVENT deleted ON TABLE wishes_for WHEN $after = NONE THEN {
     CREATE notification SET 
-        name = $before.out.name, 
-        price = $before.out.price, 
-        link = $before.out.link, 
-        store = $before.out.store, 
-        gift_recipient = $before.in,
+        item_id = $before.in,
+        gift_recipient = $before.out,
         notif_recipients = $before.bought
     ;
 };
+
+
+// table used to notify users if any of the items they've bought are deleted
+DEFINE TABLE notification SCHEMAFULL
+    PERMISSIONS
+        FOR select
+            WHERE notif_recipients CONTAINS $auth // only be able to select if you are a recipient of the notification
+;
+DEFINE FIELD name ON notification TYPE string;
+DEFINE FIELD price ON notification TYPE number;
+DEFINE FIELD link ON notification TYPE string;
+DEFINE FIELD store ON notification TYPE string;
+DEFINE FIELD item_id ON notification TYPE record(item);
+DEFINE FIELD gift_recipient ON notification TYPE record(user);
+DEFINE FIELD notif_recipients ON notification TYPE array;
+DEFINE FIELD notif_recipients.* ON notification TYPE record(user);
