@@ -343,13 +343,7 @@ async fn view_notifications() -> Result<(), Box<dyn std::error::Error>> {
     let notifications: Vec<Notification> = response.take(0)?;
     let notifications: Vec<Notification> = notifications
         .into_iter()
-        .filter(|n| {
-            n.notif_recipients
-                .iter()
-                .map(|thing| format!("{thing}"))
-                .collect::<Vec<String>>()
-                .contains(&auth_id)
-        })
+        .filter(|n| n.notif_recipients.contains(&auth_id))
         .collect();
     for n in notifications {
         println!("{n}");
@@ -374,7 +368,7 @@ fn password<'a>(message: &str) -> Vec<u8> {
     key_ref
 }
 
-async fn get_auth_id() -> Result<String, Box<dyn std::error::Error>> {
+async fn get_auth_id() -> Result<Thing, Box<dyn std::error::Error>> {
     let auth_query = format!("SELECT id FROM $auth");
     let auth_query = DB.query(auth_query);
     let mut auth_result = auth_query.await?;
@@ -385,7 +379,6 @@ async fn get_auth_id() -> Result<String, Box<dyn std::error::Error>> {
         .get("id")
         .unwrap()
         .clone();
-    let auth_id = format!("{}", auth_id);
     Ok(auth_id)
 }
 

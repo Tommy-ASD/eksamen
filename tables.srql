@@ -51,10 +51,10 @@ DEFINE EVENT deleted ON TABLE wishes_for WHEN $after = NONE THEN {
 
 // table used to notify users if any of the items they've bought are deleted
 DEFINE TABLE notification SCHEMAFULL
-    PERMISSIONS
-        FOR select
-            WHERE notif_recipients CONTAINS $auth // only be able to select if you are a recipient of the notification
-            OR gift_recipient == $auth // or if you are the gift recipient
+--    PERMISSIONS
+--        FOR select
+--            WHERE notif_recipients CONTAINS $auth // only be able to select if you are a recipient of the notification
+--            OR gift_recipient == $auth // or if you are the gift recipient
 ;
 DEFINE FIELD name ON notification TYPE string;
 DEFINE FIELD price ON notification TYPE number;
