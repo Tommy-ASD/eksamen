@@ -338,10 +338,30 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn view_notifications() -> Result<(), Box<dyn std::error::Error>> {
-    // let auth_id = get_auth_id().await?;
+    let auth_id = get_auth_id().await?;
     let mut response = DB.query("SELECT * FROM notification;").await?;
     let notifications: Vec<Notification> = response.take(0)?;
-    notifications.iter().for_each(|n| println!("{n}"));
+    let notifications: Vec<Notification> = notifications
+        .into_iter()
+        .filter(|n| {
+            n.notif_recipients
+                .iter()
+                .map(|thing| format!("{thing}"))
+                .collect::<Vec<String>>()
+                .contains(&auth_id)
+        })
+        .collect();
+    for n in notifications {
+        println!("{n}");
+        // remove self from notification
+        let query = format!(
+            "UPDATE {id} SET notif_recipients -= {auth_id};",
+            auth_id = auth_id,
+            id = n.id.clone()
+        );
+        let query = DB.query(query);
+        query.await.unwrap();
+    }
     Ok(())
 }
 
