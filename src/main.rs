@@ -1,6 +1,6 @@
 use per::EncryptedWishListElement;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 use surrealdb::{
     engine::remote::ws::{Client, Ws},
     opt::auth::Scope,
@@ -21,6 +21,7 @@ struct SrdbUserElement {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct WishListGraphConnection<T> {
+    bought: Option<Vec<Thing>>,
     #[serde(rename = "in")]
     in_: T,
     out: Thing,
@@ -29,6 +30,32 @@ struct WishListGraphConnection<T> {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct SrdbWishList {
     wishes: Vec<WishListGraphConnection<EncryptedWishListElement>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Notification {
+    gift_recipient: Thing,
+    gift_recipient_name: String,
+    id: Thing,
+    item_id: Thing,
+    name: String,
+    notif_recipients: Vec<Thing>,
+    price: f64,
+    store: String,
+}
+
+impl Display for Notification {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut notif_recipients = String::new();
+        for recipient in &self.notif_recipients {
+            notif_recipients.push_str(&format!("{}, ", recipient));
+        }
+        write!(
+            f,
+            "Gift recipient name: {}\nName: {}\nPrice: {}\nStore: {}\n\n",
+            self.gift_recipient_name, self.name, self.price, self.store
+        )
+    }
 }
 
 use crate::per::WishListElement;
@@ -145,7 +172,7 @@ async fn after_login() -> Result<(), Box<dyn std::error::Error>> {
                 Err(e) => println!("Error: {}", e),
             },
             "3" => read_other_wishlist().await?,
-            // "4" => view_notifications().await?,
+            "4" => view_notifications().await?,
             "5" => break,
             _ => println!("Invalid input"),
         }
@@ -182,6 +209,7 @@ async fn write_wishlist() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn read_wishlist() -> Result<(), Box<dyn std::error::Error>> {
     let auth_id = get_auth_id().await?;
+    let name = get_auth_name().await?;
     let mut response = DB
         .query(&format!(
             "SELECT <-wishes_for AS wishes FROM {auth_id} FETCH wishes, wishes.in;"
@@ -204,6 +232,7 @@ async fn read_wishlist() -> Result<(), Box<dyn std::error::Error>> {
                 out: wish.out.clone(),
                 in_: decrypted,
                 id: wish.id.clone(),
+                bought: wish.bought.clone(),
             }
         })
         .collect();
@@ -220,17 +249,18 @@ async fn read_wishlist() -> Result<(), Box<dyn std::error::Error>> {
         // delete connection using WishListGraphConnection.id
         let deletion_query = format!("DELETE {wish_id};", wish_id = wish.id);
         let notification_query = format!(
-            "UPDATE notification CONTENT {{
+            "UPDATE notification MERGE {{
+                \"gift_recipient_name\": \"{name}\",
                 \"name\": \"{wish_name}\",
                 \"price\": {wish_price},
                 \"link\": {wish_link:?},
                 \"store\": \"{wish_store}\",
-            }} WHERE item_id = {wish_id} AND user_id = {auth_id};",
+            }} WHERE item_id = {wish_id} AND gift_recipient = {auth_id};",
             wish_name = wish.in_.name,
             wish_price = wish.in_.price,
             wish_link = wish.in_.link,
             wish_store = wish.in_.store,
-            wish_id = wish.id
+            wish_id = wish.in_.id.clone().unwrap()
         );
         let query = DB.query(deletion_query).query(notification_query);
         query.await?;
@@ -264,6 +294,7 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
                 out: wish.out.clone(),
                 in_: decrypted,
                 id: wish.id.clone(),
+                bought: wish.bought.clone(),
             }
         })
         .collect();
@@ -276,10 +307,21 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
             .collect::<Vec<_>>();
     }
     wishes.sort_by(|a, b| a.in_.price.partial_cmp(&b.in_.price).unwrap());
-    wishes
-        .iter()
-        .enumerate()
-        .for_each(|(i, w)| println!("{i}: {w}", i = i + 1, w = w.in_));
+    wishes.iter().enumerate().for_each(|(i, w)| {
+        print!("{i}: {w}", i = i + 1, w = w.in_);
+        if let Some(bought) = &w.bought {
+            println!(
+                " (bought by {bought})",
+                bought = bought
+                    .iter()
+                    .map(|b| format!("{}", b))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        } else {
+            println!();
+        }
+    });
     let input = crate::input!("Would you like to mark any of these as bought? (y/n)");
     if input == "y" {
         let input = crate::input!("Which one? (number): ");
@@ -289,10 +331,17 @@ async fn read_other_wishlist() -> Result<(), Box<dyn std::error::Error>> {
             "UPDATE {wish_id} SET bought += {auth_id};",
             wish_id = wish.id
         );
-        dbg!(&query);
         let query = DB.query(query);
         query.await?;
     }
+    Ok(())
+}
+
+async fn view_notifications() -> Result<(), Box<dyn std::error::Error>> {
+    // let auth_id = get_auth_id().await?;
+    let mut response = DB.query("SELECT * FROM notification;").await?;
+    let notifications: Vec<Notification> = response.take(0)?;
+    notifications.iter().for_each(|n| println!("{n}"));
     Ok(())
 }
 
@@ -318,4 +367,19 @@ async fn get_auth_id() -> Result<String, Box<dyn std::error::Error>> {
         .clone();
     let auth_id = format!("{}", auth_id);
     Ok(auth_id)
+}
+
+async fn get_auth_name() -> Result<String, Box<dyn std::error::Error>> {
+    let auth_query = format!("SELECT name FROM $auth");
+    let auth_query = DB.query(auth_query);
+    let mut auth_result = auth_query.await?;
+    let auth_name = auth_result
+        .take::<Vec<HashMap<String, String>>>(0)?
+        .pop()
+        .unwrap()
+        .get("name")
+        .unwrap()
+        .clone();
+    let auth_name = format!("{}", auth_name);
+    Ok(auth_name)
 }

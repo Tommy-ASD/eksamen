@@ -7,26 +7,12 @@ use url::Url;
 use crate::utils::encrypt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum Bought {
-    Hidden,
-    Visible(Vec<String>), // vector of people who bought the item
-}
-
-impl Default for Bought {
-    fn default() -> Self {
-        Self::Hidden
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WishListElement {
     pub id: Option<Thing>,
     pub name: String,
     pub price: f64,
     pub store: String,
     pub link: Option<Url>,
-    #[serde(default)]
-    bought: Bought,
 }
 
 impl WishListElement {
@@ -37,7 +23,6 @@ impl WishListElement {
             price,
             store,
             link,
-            bought: Bought::default(),
         }
     }
     pub fn new_from_cli() -> Self {
@@ -107,7 +92,6 @@ impl WishListElement {
             price,
             store,
             link,
-            bought: encrypted.bought.clone(),
         })
     }
 }
@@ -127,8 +111,6 @@ pub struct EncryptedWishListElement {
     pub price: Vec<u8>,
     pub store: Vec<u8>,
     pub link: Option<Vec<u8>>,
-    #[serde(default)]
-    pub bought: Bought,
     pub paddings: Paddings,
 }
 
@@ -153,7 +135,6 @@ impl EncryptedWishListElement {
             price: enc_price,
             store: enc_store,
             link: enc_link,
-            bought: wish_list_element.bought,
             paddings: Paddings {
                 name: name_padding,
                 price: price_padding,
