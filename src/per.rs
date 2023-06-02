@@ -9,7 +9,7 @@ use crate::utils::encrypt;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Bought {
     Hidden,
-    Visible(bool),
+    Visible(Vec<String>), // vector of people who bought the item
 }
 
 impl Default for Bought {
@@ -37,7 +37,7 @@ impl WishListElement {
             price,
             store,
             link,
-            bought: Bought::Hidden,
+            bought: Bought::default(),
         }
     }
     pub fn new_from_cli() -> Self {

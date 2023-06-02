@@ -78,9 +78,7 @@ macro_rules! input {
     ($prompt:expr) => {
         {
             println!($prompt);
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
-            input.trim().to_string()
+            crate::input!()
         }
     };
     // if you want to specify multiple prompts
@@ -89,9 +87,7 @@ macro_rules! input {
             $(
                 println!($prompt);
             )*
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
-            input.trim().to_string()
+            crate::input!()
         }
     };
 }
